@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Audio Recorder with Processing</title>
+    <style>
+        #log {
+            /* ログエリアの高さ */
+            height: 200px;
+            /* 縦方向のスクロールを有効にする */
+            overflow-y: scroll;
+            /* 枠線を表示 */
+            border: 1px solid #ccc;
+        }
+
+        #log p {
+            margin: 2px 0;
+            padding: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Audio Recorder with Processing</h2>
+    <div>
+        <button id="startRecordBtn">Start Recording</button>
+        <button id="stopRecordBtn" disabled>Stop Recording</button>
+        <button id="playAudioBtn" disabled>Play Processed Audio</button>
+    </div>
+    <div>
+        <audio id="audioPlayback" controls></audio>
+    </div>
+    <div id="log"></div>
+
+    <script type="module">
+        import init, { process_audio } from './pkg/wasm_audio_processor.js';
+
+        async function runWasm() {
+            await init();
+
+            let mediaRecorder;
+            let audioChunks = [];
+            let logElement = document.getElementById("log");
+
+            document.getElementById("startRecordBtn").addEventListener("click", function () {
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(stream => {
+                        mediaRecorder = new MediaRecorder(stream);
+                        mediaRecorder.ondataavailable = async function (e) {
+
+                            const audioChunk = await e.data.arrayBuffer();
+                            const processedAudioChunk = process_audio(new Uint8Array(audioChunk));
+                            audioChunks.push(new Blob([processedAudioChunk], { type: 'audio/mp3' }));
+                            console.log(audioChunk.byteLength, audioChunks.length, mediaRecorder.state);
+
+                            // p要素を作成してログメッセージを追加
+                            let logMessage = document.createElement("p");
+                            logMessage.textContent = `[state: ${mediaRecorder.state}] Audio data received: ${e.data.size} bytes`;
+                            logElement.appendChild(logMessage);
+                            // 自動スクロール
+                            logElement.scrollTop = logElement.scrollHeight;
+
+                            if (mediaRecorder.state === "inactive") {
+                                console.log("chunk size: " + audioChunks.length);
+                                const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+                                const audioUrl = URL.createObjectURL(audioBlob);
+                                const audio = document.getElementById("audioPlayback");
+                                audio.src = audioUrl;
+                                document.getElementById("playAudioBtn").disabled = false;
+                            }
+                        };
+
+                        mediaRecorder.start(10);
+                        document.getElementById("startRecordBtn").disabled = true;
+                        document.getElementById("stopRecordBtn").disabled = false;
+                        audioChunks = [];
+                    })
+                    .catch(error => console.error(error));
+            });
+
+            document.getElementById("stopRecordBtn").addEventListener("click", function () {
+                mediaRecorder.stop();
+                document.getElementById("startRecordBtn").disabled = false;
+                document.getElementById("stopRecordBtn").disabled = true;
+            });
+
+            document.getElementById("playAudioBtn").addEventListener("click", function () {
+                const audio = document.getElementById("audioPlayback");
+                audio.play();
+            });
+        }
+
+        runWasm();
+    </script>
+
+</body>
+
+</html>
